@@ -4,8 +4,8 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap">
 <style>
 /* Layout: a full-screen landscape game. The 3D view fills the screen, a thin HUD floats on top:
-   place chip top-left, tool buttons top-right. Touch: the left two thirds of the screen are the joystick (it appears
-   under the finger), the right third turns the camera; action and run buttons bottom-right. */
+   place chip top-left, tool buttons top-right. Touch: the left half of the screen is the joystick (it appears
+   under the finger), the right half turns the camera; action and run buttons bottom-right. */
 :root {
   --hud: rgba(16, 18, 22, 0.72);
   --hud-strong: rgba(16, 18, 22, 0.9);
@@ -51,9 +51,9 @@ body { margin: 0; background: #0e1014; color: var(--fg); font-family: var(--font
 #act svg { width: 28px; height: 28px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 #act:active { background: #fff; color: #111; }
 #zones { position: absolute; inset: 0; z-index: 3; pointer-events: none; transition: opacity 0.6s; }
-#zones::before { content: ""; position: absolute; left: 66.667%; top: 18%; bottom: 18%; border-left: 2px dashed rgba(255,255,255,0.45); }
+#zones::before { content: ""; position: absolute; left: 50%; top: 18%; bottom: 18%; border-left: 2px dashed rgba(255,255,255,0.45); }
 #zones span { position: absolute; top: 50%; transform: translate(-50%, -50%); font-weight: 700; font-size: 15px; color: #fff; background: rgba(16,18,22,0.55); border-radius: 10px; padding: 6px 12px; }
-#zones .zl { left: 33.333%; } #zones .zr { left: 83.333%; }
+#zones .zl { left: 25%; } #zones .zr { left: 75%; }
 #run { width: 76px; height: 76px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.5); background: rgba(215,25,32,0.78); color: #fff; font: 700 15px var(--font); touch-action: none; cursor: pointer; }
 #run[aria-pressed="true"] { background: #ff2b33; box-shadow: 0 0 0 4px rgba(255,43,51,0.35); }
 #toast {
@@ -142,7 +142,7 @@ body { margin: 0; background: #0e1014; color: var(--fg); font-family: var(--font
     <input id="q" type="text" placeholder="Номер или название: B1-061, 110, DNS" aria-label="Номер павильона или название">
     <div id="results"></div>
   </div>
-  <div class="hud" id="hint" hidden>Левые ⅔ экрана — идти · правая треть — повернуть камеру · ✋ — действие · ★ — к моему павильону</div>
+  <div class="hud" id="hint" hidden>Левая половина экрана — идти · правая — повернуть камеру · ✋ — действие · ★ — к моему павильону</div>
   <div class="overlay" id="rotate" hidden>
     <div><div class="phone"></div><h2>Поверни телефон горизонтально</h2><p>Игра рассчитана на горизонтальный экран.</p><button type="button" id="rotOk">Играть так</button></div>
   </div>
@@ -1984,8 +1984,8 @@ window.addEventListener('keyup', e => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());
 
 let look = null, joyId = null, joy = { x: 0, y: 0 }, joyBase = null, runHeld = false, downAt = null;
-// the left two thirds of the screen move you: the joystick appears where the finger lands and follows it past its rim;
-// the right third turns the camera
+// the left half of the screen moves you: the joystick appears where the finger lands and follows it past its rim;
+// the right half turns the camera
 const joyEl = $('joy'), knob = $('knob');
 function joyStart(ev) {
   joyEl.style.transform = ''; const r = joyEl.getBoundingClientRect(), R = r.width / 2;
@@ -2007,7 +2007,7 @@ function joyEnd() { joyId = null; joyBase = null; joy = { x: 0, y: 0 }; joyEl.cl
 canvas.addEventListener('pointerdown', ev => {
   downAt = [ev.clientX, ev.clientY];
   if (mode !== 'walk') return;
-  if (ev.clientX < game.clientWidth * 2 / 3) {
+  if (ev.clientX < game.clientWidth / 2) {
     if (joyId !== null) return;
     joyId = ev.pointerId; canvas.setPointerCapture(ev.pointerId); joyStart(ev); ev.preventDefault();
   } else if (!look) {
@@ -2019,7 +2019,7 @@ canvas.addEventListener('pointermove', ev => {
   if (mode !== 'walk') { if (ev.pointerType === 'mouse') hoverOrbit(ev); return; }
   if (ev.pointerId === joyId) { joyMove(ev); return; }
   if (look && look.id === ev.pointerId) {
-    const k = ev.pointerType === 'mouse' ? 0.0055 : 0.0078;
+    const k = ev.pointerType === 'mouse' ? 0.0045 : 0.0068;
     player.yaw -= (ev.clientX - look.x) * k;
     player.pitch = Math.max(-1.2, Math.min(1.1, player.pitch - (ev.clientY - look.y) * k));
     look.x = ev.clientX; look.y = ev.clientY; hideHint();
@@ -2319,7 +2319,7 @@ async function start() {
     resize(); setMode('walk'); applyView();
     $('loading').hidden = true;
     hint.hidden = false; $('zones').hidden = !coarse; hintTimer = setTimeout(hideHint, 9000);
-    if (!coarse) hint.textContent = 'WASD — идти · Shift — бег · тяни мышью справа — камера · E — действие · ★ — к моему павильону';
+    if (!coarse) hint.textContent = 'WASD — идти · Shift — бег · тяни мышью в правой половине — камера · E — действие · ★ — к моему павильону';
     requestAnimationFrame(t => { last = t; tick(t); });
   } catch (e) {
     txt.textContent = 'Не удалось загрузить модель: ' + e.message;
