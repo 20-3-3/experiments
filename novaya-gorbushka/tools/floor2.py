@@ -221,7 +221,64 @@ for kind, sec, g in pieces:
 rooms2.append({'sector': 'B', 'kind': 'store', 'poly': [[round(x, 2), round(z, 2)] for x, z in list(DNS.exterior.coords)[:-1]],
                'area': round(DNS.area, 1), 'codes': ['B2-182'], 'name': 'DNS', 'brand': 'dns'})
 
-# numbering: B2 uses 1xx (B2-110, B2-182 are real), the others start at 001
+# ---------------- every stair top must open onto the corridors of floor 2 ----------------
+# floor 2 pavilions copy the floor 1 grid, which can box a landing in; carve a passage from such a
+# landing to the nearest corridor, trimming the floor 2 pavilions in the way
+from shapely.ops import nearest_points
+slab_g = main.difference(holes)
+
+
+# balustrades around the light wells and stair openings (open only where you step off a flight)
+rails = []
+link_tops = unary_union([top_landing(L, 0.6) for L in links])
+for g in as_polys(holes):
+    ring = list(g.exterior.coords)
+    for (x0, z0), (x1, z1) in zip(ring, ring[1:]):
+        seg = LineString([(x0, z0), (x1, z1)])
+        rest = seg.difference(link_tops.buffer(0.1))
+        for part in ([rest] if isinstance(rest, LineString) else list(getattr(rest, 'geoms', []))):
+            if part.length > 0.3:
+                (a, b) = part.coords[0], part.coords[-1]
+                rails.append([round(a[0], 2), round(a[1], 2), round(b[0], 2), round(b[1], 2)])
+rail_geom = unary_union([LineString([(r[0], r[1]), (r[2], r[3])]) for r in rails]).buffer(0.12)
+
+
+def walk_area():
+    # where a player can walk comfortably on floor 2: passages at least 1 m wide (the player is 0.56 m wide)
+    occ = unary_union([Polygon(r['poly']).buffer(0) for r in rooms2] + [rail_geom]).buffer(0.5)
+    return slab_g.buffer(-0.8).difference(occ)
+
+
+carved = []
+for L in links:
+    comps = as_polys(walk_area())
+    if not comps:
+        break
+    big = max(comps, key=lambda g: g.area)
+    land = top_landing(L, 1.6)
+    if land.intersection(big).area > 0.5:
+        continue
+    p1, p2 = nearest_points(land, big)
+    dx_, dz_ = p2.x - p1.x, p2.y - p1.y
+    n_ = math.hypot(dx_, dz_) or 1.0
+    end = (p2.x + dx_ / n_ * 1.5, p2.y + dz_ / n_ * 1.5)   # run 1.5 m into the corridor for a wide join
+    corridor = LineString([(p1.x, p1.y), end]).buffer(1.25, cap_style=2).union(land.buffer(0.2))
+    for r in list(rooms2):
+        poly = Polygon(r['poly']).buffer(0)
+        if not poly.intersects(corridor):
+            continue
+        parts = as_polys(poly.difference(corridor.buffer(0.05)))
+        if not parts or max(p.area for p in parts) < 2.5:
+            rooms2.remove(r); continue
+        q = max(parts, key=lambda p: p.area).simplify(0.03)
+        r['poly'] = [[round(x, 2), round(z, 2)] for x, z in list(q.exterior.coords)[:-1]]
+        r['area'] = round(q.area, 1)
+    carved.append((L['src'], round(n_, 1)))
+print('passages carved from stair tops (flight, metres):', carved)
+
+# placeholder numbering: B2 and G2 use 1xx (B2-110, B2-182 and G2-103 are real), the others start at 001;
+# real numbers are kept free for the pavilions they belong to
+REAL = {'B2-110', 'B2-182', 'G2-103', 'C2-012A', 'C2-008A', 'E2-022', 'H2-010G'}
 by_sec = {}
 for r in rooms2:
     if r['kind'] == 'tech' or r['codes']:
@@ -229,9 +286,11 @@ for r in rooms2:
     by_sec.setdefault(r['sector'], []).append(r)
 for sec, rs in by_sec.items():
     rs.sort(key=lambda r: (round(Polygon(r['poly']).centroid.y / 6), Polygon(r['poly']).centroid.x))
-    start = 101 if sec == 'B' else 1
-    for k, r in enumerate(rs):
-        r['codes'] = [f'{sec}2-{start + k:03d}']
+    n = 101 if sec in ('B', 'G') else 1
+    for r in rs:
+        while f'{sec}2-{n:03d}' in REAL:
+            n += 1
+        r['codes'] = [f'{sec}2-{n:03d}']; n += 1
 
 
 def nearest(sec, x, z, pred=lambda r: True):
@@ -274,6 +333,18 @@ if r: set_code(r, 'E2-022', 'ГаджетКлик')
 r = nearest('H', -50, -45)
 if r: set_code(r, 'H2-010G', 'DJI · GoPro · Insta360')
 
+# the owner's pavilion G2-103 (number told by the owner; the place is a guess until they describe it):
+# by the numbering it sits above G1-003, so take the cell over G1-003 that faces the main corridor of sector G
+OWNER = 'G2-103'
+g1_003 = next((P(r) for r in rooms1 if 'G1-003' in r['codes']), None)
+cands = [r for r in rooms2 if r['sector'] == 'G' and r['kind'] != 'tech' and g1_003 is not None and Polygon(r['poly']).centroid.within(g1_003)]
+if cands:
+    r = max(cands, key=lambda r: Polygon(r['poly']).centroid.x)
+    set_code(r, OWNER, 'Мой павильон')
+    r['mine'] = True
+    M['player'] = {'pavilion': OWNER}
+    print('owner pavilion', OWNER, 'at', [round(v, 1) for v in Polygon(r['poly']).bounds], 'area', r['area'])
+
 # themes from the poster legend
 THEME = {'B': 'все диски', 'C': 'все диски', 'G': 'все диски', 'D': 'сервисная зона',
          'E': 'компьютеры', 'F': 'компьютеры', 'H': 'компьютеры'}   # word for word from the legend of the floor 1 poster
@@ -286,18 +357,6 @@ slab_polys = []
 for p in as_polys(slab):
     slab_polys.append({'poly': [[round(x, 2), round(z, 2)] for x, z in list(p.exterior.coords)[:-1]],
                        'holes': [[[round(x, 2), round(z, 2)] for x, z in list(h.coords)[:-1]] for h in p.interiors]})
-rails = []
-link_tops = unary_union([top_landing(L, 0.6) for L in links])
-for g in as_polys(holes):
-    ring = list(g.exterior.coords)
-    for (x0, z0), (x1, z1) in zip(ring, ring[1:]):
-        seg = LineString([(x0, z0), (x1, z1)])
-        rest = seg.difference(link_tops.buffer(0.1))
-        for part in ([rest] if isinstance(rest, LineString) else list(getattr(rest, 'geoms', []))):
-            if part.length > 0.3:
-                (a, b) = part.coords[0], part.coords[-1]
-                rails.append([round(a[0], 2), round(a[1], 2), round(b[0], 2), round(b[1], 2)])
-
 M['floor2'] = {
     'note': 'Реконструкция: официальной схемы 2 этажа нет в открытом доступе',
     'height': H1,

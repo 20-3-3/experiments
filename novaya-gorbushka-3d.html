@@ -36,6 +36,8 @@ body { margin: 0; background: #0e1014; color: var(--fg); font-family: var(--font
 }
 .btn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .btn[aria-pressed="true"] { background: var(--red); border-color: var(--red); }
+.btn.mine { color: #ffd400; border-color: rgba(255, 212, 0, 0.55); }
+.btn.mine svg { fill: #ffd400; }
 .btn:focus-visible, .pill:focus-visible, #q:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 #minimap { width: 200px; height: 240px; border-radius: 12px; border: 1px solid var(--line); background: #1b1e24; }
 #joy { width: 132px; height: 132px; border-radius: 50%; background: rgba(255,255,255,0.10); border: 2px solid rgba(255,255,255,0.45); position: relative; touch-action: none; }
@@ -94,6 +96,8 @@ body { margin: 0; background: #0e1014; color: var(--fg); font-family: var(--font
   </div>
   <div class="hud tr">
     <div class="tools">
+      <button class="btn mine" id="bMine" type="button" aria-label="К моему павильону" title="К моему павильону (H)">
+        <svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg></button>
       <button class="btn" id="bView" type="button" aria-pressed="false" aria-label="Вид от 1-го или 3-го лица" title="Вид: 1-е / 3-е лицо (V)">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.2"/><path d="M5.5 20c.8-4 3.4-6 6.5-6s5.7 2 6.5 6"/></svg></button>
       <button class="btn" id="bMap" type="button" aria-pressed="true" aria-label="Карта" title="Карта (M)">
@@ -120,7 +124,7 @@ body { margin: 0; background: #0e1014; color: var(--fg); font-family: var(--font
     <input id="q" type="text" placeholder="Номер или название: B1-061, 110, DNS" aria-label="Номер павильона или название">
     <div id="results"></div>
   </div>
-  <div class="hud" id="hint" hidden>Джойстик слева — идти · тяни экран — смотреть · лестницы и эскалаторы ведут на 2 этаж</div>
+  <div class="hud" id="hint" hidden>Джойстик слева — идти · тяни экран — смотреть · ★ — к моему павильону</div>
   <div class="overlay" id="rotate" hidden>
     <div><div class="phone"></div><h2>Поверни телефон горизонтально</h2><p>Игра рассчитана на горизонтальный экран.</p><button type="button" id="rotOk">Играть так</button></div>
   </div>
@@ -528,6 +532,7 @@ function buildBrandSigns(rooms, level) {
     if (name === 'PARK BT') { lines = ['PARK BT', 'кухни · техника · посуда']; }
     if (name === 'МУЗЫКА · КЛАССИКА') lines = ['МУЗЫКА | КЛАССИКА', 'Опера · Балет · Аудио · Видео · MP3'];
     if (name === 'GARMIN') lines = ['GARMIN'];
+    if (r.mine) lines = [r.codes[0], 'МОЙ ПАВИЛЬОН'];
     const sign = signPlane(lines, bg, fg, hh * (lines.length > 1 ? 1.25 : 1), opts);
     placeOnWall(sign, (x1 + x2) / 2, (z1 + z2) / 2, nx, nz, y0 + r.h - fh + Math.max(fh, hh) / 2 + 0.05, 0.08);
     (level === 1 ? groups.f1 : groups.f2).add(sign);
@@ -1197,7 +1202,7 @@ function showRoom(r) {
   const lines = [];
   if (r.name) lines.push(r.name);
   if (r.level === 2 && r.theme && !r.name) lines.push('по легенде схемы: ' + r.theme);
-  lines.push(`${r.level} этаж · ${Math.round(r.area)} м²${r.closed ? ' · закрыт' : ''}${r.level === 2 ? ' · реконструкция' : ''}`);
+  lines.push(`${r.level} этаж · ${Math.round(r.area)} м²${r.closed ? ' · закрыт' : ''}${r.level === 2 && !r.mine ? ' · реконструкция' : ''}`);
   toast.innerHTML = `<div class="sec" style="background:${col};color:${DARK_TEXT[r.sector] ? '#222' : '#fff'}">${r.sector === 'tech' ? '' : r.sector}</div><div><b>${code.replace(/</g, '&lt;')}</b><span>${lines.map(s => s.replace(/</g, '&lt;')).join(' · ')}</span></div>`;
   toast.hidden = false;
 }
@@ -1213,7 +1218,7 @@ function updateLabels(force) {
   const near = [];
   if (mode === 'walk') {
     for (const r of labelRooms) {
-      if (r.level !== lvl || !r.fronts || !r.fronts.length) continue;
+      if (r.level !== lvl || !r.fronts || !r.fronts.length || r.mine) continue;
       const d = Math.hypot(r.box.cx - player.x, r.box.cz - player.z);
       if (d < 24) near.push([d, r]);
     }
@@ -1255,6 +1260,13 @@ function drawMinimap() {
   if (mini.hidden) return;
   const lvl = player.y > H2 - 0.9 ? 2 : 1;
   mctx.drawImage(mm.bg[lvl], 0, 0);
+  if (mine) {   // gold star on the owner's pavilion: filled on its floor, outlined on the other one
+    const sx = mm.tx(mine.box.cx), sz = mm.tz(mine.box.cz), R = lvl === mine.level ? 15 : 11;
+    mctx.beginPath();
+    for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr2 = i % 2 ? R * 0.45 : R; mctx.lineTo(sx + Math.cos(a) * rr2, sz + Math.sin(a) * rr2); }
+    mctx.closePath(); mctx.lineWidth = 3; mctx.strokeStyle = '#1d1f22'; mctx.stroke();
+    if (lvl === mine.level) { mctx.fillStyle = '#ffd400'; mctx.fill(); } else { mctx.strokeStyle = '#ffd400'; mctx.lineWidth = 2.5; mctx.stroke(); }
+  }
   const px = mm.tx(player.x), pz = mm.tz(player.z);
   mctx.save(); mctx.translate(px, pz); mctx.rotate(-player.yaw);
   mctx.fillStyle = '#d71920'; mctx.strokeStyle = '#fff'; mctx.lineWidth = 3;
@@ -1272,6 +1284,7 @@ window.addEventListener('keydown', e => {
   if (k === 'KeyM') toggleMap();
   if (k === 'KeyF') { e.preventDefault(); toggleSearch(); }
   if (k === 'KeyO') setMode(mode === 'orbit' ? 'walk' : 'orbit');
+  if (k === 'KeyH') goMine();
 });
 window.addEventListener('keyup', e => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());
@@ -1320,6 +1333,7 @@ function toggleView() { view = view === 'fp' ? 'tp' : 'fp'; $('bView').setAttrib
 function applyView() { avatar.visible = mode === 'walk' && view === 'tp'; $('cross').hidden = !(mode === 'walk' && view === 'fp'); }
 function toggleMap() { mini.hidden = !mini.hidden; $('bMap').setAttribute('aria-pressed', String(!mini.hidden)); }
 $('bView').onclick = toggleView;
+$('bMine').onclick = () => goMine();
 $('bMap').onclick = toggleMap;
 $('bFind').onclick = () => toggleSearch();
 $('bOrbit').onclick = () => setMode(mode === 'orbit' ? 'walk' : 'orbit');
@@ -1378,7 +1392,7 @@ function markRoom(r) {
   scene.add(selMesh);
 }
 function goToRoom(r) {
-  markRoom(r); showRoom(r);
+  markRoom(r.mine ? null : r); showRoom(r);   // the owner's pavilion has its own gold marking
   if (mode === 'orbit') { focusOrbit(r.box, 40); return; }
   const f = frontOf(r);
   if (f) {
@@ -1388,6 +1402,33 @@ function goToRoom(r) {
     player.x = (x1 + x2) / 2 + nx * k; player.z = (z1 + z2) / 2 + nz * k; player.y = r.level === 2 ? H2 : 0; player.vy = 0;
     player.yaw = Math.atan2(nx, nz); player.pitch = 0.12;
   }
+}
+
+// ============================================================== the owner's pavilion
+let mine = null, beacon = null;
+function setupMine() {
+  const code = M.player && M.player.pavilion;
+  mine = code ? M.floor2.rooms.concat(M.rooms).find(r => r.codes.includes(code)) || null : null;
+  $('bMine').hidden = !mine;
+  if (!mine) return;
+  const y0 = mine.level === 2 ? H2 : 0;
+  const edges = [];   // gold line on the floor around it
+  for (let i = 0; i < mine.poly.length; i++) {
+    const [x0, z0] = mine.poly[i], [x1, z1] = mine.poly[(i + 1) % mine.poly.length];
+    edges.push(segBox(x0, z0, x1, z1, y0 + 0.012, 0.025, 0.18));
+  }
+  (mine.level === 2 ? groups.f2 : groups.f1).add(new THREE.Mesh(merge(edges), new THREE.MeshBasicMaterial({ color: 0xffc400 })));
+  beacon = spriteSign(['★ МОЙ ПАВИЛЬОН', mine.codes[0]], '#1d1f22', '#ffd400', 0.9, { round: true, fg2: '#ffffff' });
+  beacon.material.depthTest = false; beacon.renderOrder = 20;
+  beacon.position.set(mine.box.cx, y0 + mine.h + 1.6, mine.box.cz);
+  beacon.userData = { w: beacon.scale.x, h: beacon.scale.y, y: beacon.position.y };
+  scene.add(beacon);
+}
+function goMine() {
+  if (!mine) return;
+  if (mode === 'orbit') setMode('walk');
+  toggleSearch(false);
+  goToRoom(mine);
 }
 
 // ============================================================== orbit (overview) mode
@@ -1521,6 +1562,11 @@ let last = performance.now();
 function tick(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (mode === 'orbit') controls.update(); else stepWalk(dt);
+  if (beacon) {   // the marker over the owner's pavilion stays readable from far away
+    const k = Math.max(1, Math.min(8, camera.position.distanceTo(beacon.position) / 16));
+    beacon.scale.set(beacon.userData.w * k, beacon.userData.h * k, 1);
+    beacon.position.y = beacon.userData.y + (k - 1) * 0.5;
+  }
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
@@ -1535,7 +1581,7 @@ async function start() {
     bar.style.width = '45%'; txt.textContent = 'Строю 2 этажа и фасады…';
     await new Promise(r => setTimeout(r, 30));
     if (document.fonts && document.fonts.load) await Promise.all([document.fonts.load('800 40px "Golos Text"'), document.fonts.load('600 20px "Golos Text"')]).catch(() => {});
-    build(); indexColliders(); buildMinimap();
+    build(); indexColliders(); setupMine(); buildMinimap();
     bar.style.width = '90%';
     SPAWN = computeSpawn();
     Object.assign(player, SPAWN, { y: 0 });

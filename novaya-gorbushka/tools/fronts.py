@@ -87,6 +87,8 @@ for r in rooms1 + rooms2:
         r['brand'] = BRANDS['H1-030']
     if 'brand' not in r and r.get('kind') == 'cafe':
         r['brand'] = (r['name'].replace('КАФЕ ', ''), '#7a1f1f', '#ffe3a3')
+    if r.get('mine'):   # the owner's pavilion: dark band with yellow letters until we know its real sign
+        r['brand'] = (r['codes'][0], '#1d1f22', '#ffd400')
     if isinstance(r.get('brand'), str):
         r['brand'] = BRANDS.get('B2-182') if r['brand'] == 'dns' else None
         if r['brand'] is None:
