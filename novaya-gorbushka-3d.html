@@ -4,7 +4,8 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap">
 <style>
 /* Layout: a full-screen landscape game. The 3D view fills the screen, a thin HUD floats on top:
-   place chip top-left, tool buttons top-right, joystick bottom-left, run button bottom-right. */
+   place chip top-left, tool buttons top-right. Touch: the left two thirds of the screen are the joystick (it appears
+   under the finger), the right third turns the camera; action and run buttons bottom-right. */
 :root {
   --hud: rgba(16, 18, 22, 0.72);
   --hud-strong: rgba(16, 18, 22, 0.9);
@@ -26,6 +27,8 @@ body { margin: 0; background: #0e1014; color: var(--fg); font-family: var(--font
 .tr { right: calc(12px + env(safe-area-inset-right, 0px)); top: calc(10px + env(safe-area-inset-top, 0px)); display: grid; gap: 8px; justify-items: end; }
 .bl { left: calc(18px + env(safe-area-inset-left, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
 .br { right: calc(18px + env(safe-area-inset-right, 0px)); bottom: calc(22px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 10px; justify-items: end; }
+.tl, .tr, .br { pointer-events: none; }   /* only the buttons themselves take touches; the rest is game field */
+.tr button, .br button { pointer-events: auto; }
 .chip { background: var(--hud); border: 1px solid var(--line); border-radius: 10px; padding: 6px 11px; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px; backdrop-filter: blur(6px); }
 .chip .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; box-shadow: 0 0 0 2px rgba(255,255,255,0.75); }
 .chip.small { font-size: 11px; font-weight: 500; color: var(--muted); padding: 4px 9px; border-radius: 8px; }
@@ -39,9 +42,18 @@ body { margin: 0; background: #0e1014; color: var(--fg); font-family: var(--font
 .btn.mine { color: #ffd400; border-color: rgba(255, 212, 0, 0.55); }
 .btn.mine svg { fill: #ffd400; }
 .btn:focus-visible, .pill:focus-visible, #q:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-#minimap { width: 200px; height: 240px; border-radius: 12px; border: 1px solid var(--line); background: #1b1e24; }
-#joy { width: 132px; height: 132px; border-radius: 50%; background: rgba(255,255,255,0.10); border: 2px solid rgba(255,255,255,0.45); position: relative; touch-action: none; }
-#knob { position: absolute; left: 38px; top: 38px; width: 56px; height: 56px; border-radius: 50%; background: rgba(255,255,255,0.88); box-shadow: 0 4px 14px rgba(0,0,0,0.35); }
+#minimap { pointer-events: none; width: 200px; height: 240px; border-radius: 12px; border: 1px solid var(--line); background: #1b1e24; }
+#joyWrap { pointer-events: none; }
+#joy { width: 132px; height: 132px; border-radius: 50%; background: rgba(255,255,255,0.10); border: 2px solid rgba(255,255,255,0.45); position: relative; transition: transform 0.15s ease-out, opacity 0.15s; opacity: 0.7; }
+#knob { position: absolute; left: 38px; top: 38px; width: 56px; height: 56px; border-radius: 50%; background: rgba(255,255,255,0.88); box-shadow: 0 4px 14px rgba(0,0,0,0.35); transition: transform 0.15s ease-out; }
+#joy.active { transition: none; opacity: 1; } #joy.active #knob { transition: none; }
+#act { width: 60px; height: 60px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.5); background: var(--hud-strong); color: #fff; display: grid; place-items: center; padding: 0; touch-action: none; cursor: pointer; }
+#act svg { width: 28px; height: 28px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#act:active { background: #fff; color: #111; }
+#zones { position: absolute; inset: 0; z-index: 3; pointer-events: none; transition: opacity 0.6s; }
+#zones::before { content: ""; position: absolute; left: 66.667%; top: 18%; bottom: 18%; border-left: 2px dashed rgba(255,255,255,0.45); }
+#zones span { position: absolute; top: 50%; transform: translate(-50%, -50%); font-weight: 700; font-size: 15px; color: #fff; background: rgba(16,18,22,0.55); border-radius: 10px; padding: 6px 12px; }
+#zones .zl { left: 33.333%; } #zones .zr { left: 83.333%; }
 #run { width: 76px; height: 76px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.5); background: rgba(215,25,32,0.78); color: #fff; font: 700 15px var(--font); touch-action: none; cursor: pointer; }
 #run[aria-pressed="true"] { background: #ff2b33; box-shadow: 0 0 0 4px rgba(255,43,51,0.35); }
 #toast {
@@ -83,6 +95,7 @@ body { margin: 0; background: #0e1014; color: var(--fg); font-family: var(--font
   #minimap { width: 150px; height: 180px; }
   #joy { width: 112px; height: 112px; } #knob { left: 31px; top: 31px; width: 50px; height: 50px; }
   #run { width: 64px; height: 64px; font-size: 13px; }
+  #act { width: 52px; height: 52px; } #act svg { width: 24px; height: 24px; }
   .btn { width: 40px; height: 40px; }
 }
 </style>
@@ -112,7 +125,12 @@ body { margin: 0; background: #0e1014; color: var(--fg); font-family: var(--font
     <canvas id="minimap" width="400" height="480"></canvas>
   </div>
   <div class="hud bl" id="joyWrap"><div id="joy"><div id="knob"></div></div></div>
-  <div class="hud br" id="runWrap"><button id="run" type="button" aria-pressed="false">Бег</button></div>
+  <div class="hud br" id="runWrap">
+    <button id="act" type="button" aria-label="Действие" title="Действие (E)">
+      <svg viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4a1.5 1.5 0 0 1 3 0v7M14 11V5.5a1.5 1.5 0 0 1 3 0V13M17 9.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1.5a6 6 0 0 1-4.8-2.4L4.6 14.8a1.6 1.6 0 0 1 2.4-2.1L8 13.8"/></svg></button>
+    <button id="run" type="button" aria-pressed="false">Бег</button>
+  </div>
+  <div id="zones" hidden><span class="zl">Здесь — идти</span><span class="zr">Здесь — камера</span></div>
   <div class="hud" id="toast" hidden></div>
   <div class="hud bc" id="orbitBar" hidden>
     <button class="pill" type="button" id="cut1" aria-pressed="false">1 этаж</button>
@@ -124,7 +142,7 @@ body { margin: 0; background: #0e1014; color: var(--fg); font-family: var(--font
     <input id="q" type="text" placeholder="Номер или название: B1-061, 110, DNS" aria-label="Номер павильона или название">
     <div id="results"></div>
   </div>
-  <div class="hud" id="hint" hidden>Джойстик слева — идти · тяни экран — смотреть · ★ — к моему павильону</div>
+  <div class="hud" id="hint" hidden>Левые ⅔ экрана — идти · правая треть — повернуть камеру · ✋ — действие · ★ — к моему павильону</div>
   <div class="overlay" id="rotate" hidden>
     <div><div class="phone"></div><h2>Поверни телефон горизонтально</h2><p>Игра рассчитана на горизонтальный экран.</p><button type="button" id="rotOk">Играть так</button></div>
   </div>
@@ -1673,15 +1691,164 @@ const inAwing = (x, z) => pip(x, z, awingPoly);
 const player = { x: 0, z: 0, y: 0, vy: 0, yaw: 0, pitch: -0.05 };
 let view = 'tp', mode = 'walk';
 const avatar = new THREE.Group();
+// The hero: a seller in a red Gorbushka jacket, jeans and a cap, built from joints so arms and legs can move.
+// Local forward is -z; positive x rotation swings a limb forward, a knee bends with negative x, an elbow with positive x.
+const AVJ = {};
 (() => {
-  const skin = new THREE.MeshStandardMaterial({ color: 0xf0c8a0 });
-  const legs = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.82, 14), new THREE.MeshStandardMaterial({ color: 0x24324a })); legs.position.y = 0.41; avatar.add(legs);
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 0.66, 16), new THREE.MeshStandardMaterial({ color: 0xd71920 })); body.position.y = 1.15; avatar.add(body);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 12), skin); head.position.y = 1.62; avatar.add(head);
-  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.08, 16), new THREE.MeshStandardMaterial({ color: 0x1d1f22 })); cap.position.y = 1.75; avatar.add(cap);
-  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.03, 0.14), new THREE.MeshStandardMaterial({ color: 0x1d1f22 })); visor.position.set(0, 1.72, -0.2); avatar.add(visor);
+  const mk = (c, r) => new THREE.MeshStandardMaterial({ color: c, roughness: r, envMapIntensity: 0.5 });
+  const mat = { skin: mk(0xe0ad88, 0.6), jacket: mk(0xc4141b, 0.72), trim: mk(0xf2f2f0, 0.6), jeans: mk(0x2d3f66, 0.85), shoe: mk(0xf0f0ee, 0.5),
+    sole: mk(0x2a2a2a, 0.8), cap: mk(0x1b1d21, 0.6), hair: mk(0x3b2a1f, 0.9), dark: mk(0x1a1a1a, 0.35), lip: mk(0xa5524a, 0.6) };
+  const part = (geo, m, parent, x = 0, y = 0, z = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; parent.add(o); return o; };
+  const joint = (parent, x, y, z) => { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g; };
+  const limb = (r0, r1, len) => { const g = new THREE.CylinderGeometry(r0, r1, len, 12); g.translate(0, -len / 2, 0); return g; };   // hangs from its joint
+  const ball = (r, sx = 1, sy = 1, sz = 1) => { const g = new THREE.SphereGeometry(r, 16, 12); g.scale(sx, sy, sz); return g; };
+
+  const pelvis = AVJ.pelvis = joint(avatar, 0, 0.953, 0);
+  part(ball(0.165, 1.05, 0.62, 0.78), mat.jeans, pelvis, 0, -0.02, 0);
+  for (const [k, sx] of [['L', -1], ['R', 1]]) {             // legs: thigh 0.43, shin 0.41, sneaker
+    const hip = joint(pelvis, sx * 0.092, -0.03, 0);
+    part(limb(0.083, 0.064, 0.43), mat.jeans, hip);
+    const knee = joint(hip, 0, -0.43, 0);
+    part(ball(0.064), mat.jeans, knee);
+    part(limb(0.062, 0.05, 0.41), mat.jeans, knee);
+    const ankle = joint(knee, 0, -0.41, 0);
+    part(new THREE.BoxGeometry(0.105, 0.075, 0.26), mat.shoe, ankle, 0, -0.035, -0.055);
+    part(new THREE.BoxGeometry(0.112, 0.022, 0.27), mat.sole, ankle, 0, -0.072, -0.055);
+    AVJ['hip' + k] = hip; AVJ['knee' + k] = knee; AVJ['ankle' + k] = ankle;
+  }
+  const spine = AVJ.spine = joint(pelvis, 0, 0.05, 0);
+  const torso = new THREE.LatheGeometry([[0, 0], [0.15, 0], [0.163, 0.08], [0.168, 0.2], [0.18, 0.33], [0.19, 0.41], [0.172, 0.47], [0.11, 0.52], [0.05, 0.535], [0, 0.535]]
+    .map(([r, y]) => new THREE.Vector2(r, y)), 20);
+  torso.scale(1.12, 1, 0.72);
+  part(torso, mat.jacket, spine);
+  const hem = new THREE.CylinderGeometry(0.17, 0.17, 0.045, 20, 1, true); hem.scale(1.12, 1, 0.74);
+  part(hem, mat.trim, spine, 0, 0.03, 0);                    // white hem of the jacket
+  const collar = new THREE.TorusGeometry(0.066, 0.022, 8, 18); collar.rotateX(Math.PI / 2);
+  part(collar, mat.trim, spine, 0, 0.525, 0);
+  part(new THREE.BoxGeometry(0.012, 0.44, 0.012), mat.dark, spine, 0, 0.27, -0.128);   // zip
+  AVJ.badge = part(new THREE.PlaneGeometry(0.1, 0.055), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), spine, -0.085, 0.36, -0.138);
+  AVJ.badge.rotation.set(-0.12, Math.PI, 0); AVJ.badge.castShadow = false; AVJ.badge.visible = false;
+
+  const neck = AVJ.neck = joint(spine, 0, 0.53, 0);
+  part(limb(0.05, 0.056, 0.09), mat.skin, neck, 0, 0.09, 0);
+  const head = AVJ.head = joint(neck, 0, 0.08, 0);
+  part(ball(0.112, 0.92, 1.08, 1.0), mat.skin, head, 0, 0.1, 0);
+  part(ball(0.116, 0.95, 0.75, 0.98), mat.hair, head, 0, 0.115, 0.022);
+  for (const sx of [-1, 1]) {
+    part(ball(0.026, 0.55, 1, 0.9), mat.skin, head, sx * 0.104, 0.1, 0.012);           // ears
+    part(ball(0.015), mat.dark, head, sx * 0.04, 0.122, -0.098);                       // eyes
+    part(new THREE.BoxGeometry(0.042, 0.009, 0.01), mat.hair, head, sx * 0.041, 0.152, -0.102);   // brows
+  }
+  part(ball(0.018, 1, 1.15, 1.4), mat.skin, head, 0, 0.093, -0.112);                   // nose
+  part(new THREE.BoxGeometry(0.042, 0.007, 0.008), mat.lip, head, 0, 0.052, -0.103);   // mouth
+  const crown = new THREE.SphereGeometry(0.123, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2); crown.scale(0.96, 0.72, 1.0);
+  part(crown, mat.cap, head, 0, 0.148, 0.004);
+  const visor = part(new THREE.BoxGeometry(0.17, 0.012, 0.11), mat.cap, head, 0, 0.152, -0.155); visor.rotation.x = 0.14;
+  part(new THREE.BoxGeometry(0.05, 0.026, 0.004), mat.jacket, head, 0, 0.19, -0.112).rotation.x = -0.5;   // red patch on the cap
+
+  for (const [k, sx] of [['L', -1], ['R', 1]]) {             // arms: upper arm 0.29, forearm 0.25, hand
+    const sh = joint(spine, sx * 0.205, 0.43, 0);
+    part(ball(0.068), mat.jacket, sh);
+    part(limb(0.062, 0.052, 0.29), mat.jacket, sh);
+    const el = joint(sh, 0, -0.29, 0);
+    part(ball(0.052), mat.jacket, el);
+    part(limb(0.05, 0.043, 0.25), mat.jacket, el);
+    part(limb(0.047, 0.047, 0.032), mat.trim, el, 0, -0.218, 0);                       // white cuff
+    const wr = joint(el, 0, -0.25, 0);
+    part(ball(0.045, 0.8, 1.2, 0.55), mat.skin, wr, 0, -0.048, 0);
+    part(ball(0.016, 1, 1.7, 1), mat.skin, wr, -sx * 0.035, -0.04, -0.012);           // thumb
+    AVJ['sh' + k] = sh; AVJ['el' + k] = el; AVJ['wr' + k] = wr;
+  }
   scene.add(avatar);
 })();
+function setBadge(code) {          // the owner's pavilion number on the chest
+  const c = document.createElement('canvas'); c.width = 200; c.height = 110; const x = c.getContext('2d');
+  x.fillStyle = '#ffffff'; x.fillRect(0, 0, 200, 110); x.fillStyle = '#d71920'; x.fillRect(0, 0, 200, 26);
+  x.fillStyle = '#ffffff'; x.font = '700 20px "Golos Text", Arial'; x.textAlign = 'center'; x.fillText('ГОРБУШКА', 100, 20);
+  x.fillStyle = '#111111'; x.font = '800 48px "Golos Text", Arial'; x.fillText(code, 100, 86);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+  AVJ.badge.material.map = t; AVJ.badge.material.needsUpdate = true; AVJ.badge.visible = true;
+}
+
+// ---------------------------------------------------------------- avatar animation
+// Locomotion follows the real speed (stride grows with it, so feet do not slide), the hips sit as high as the lower
+// foot allows, arms swing against the legs. On top: a hand on the rail on stairs and escalators, both hands on glass
+// or a wall you walk into, and one-shot actions (wave, knock, point, pick up) for the game's objects.
+const AV = { yaw: 0, phase: 0, speed: 0, push: 0, rail: 0, headY: 0, headX: 0, look: 0, lookNext: 3, t: 0, act: null, actT: 0, waveAt: -99 };
+const ACTS = { wave: 1.9, knock: 1.2, point: 1.5, pickup: 1.8 };
+const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
+const wrapA = a => Math.atan2(Math.sin(a), Math.cos(a));
+function avatarAct(name) {
+  if (!ACTS[name]) return;
+  AV.act = name; AV.actT = 0;
+}
+function legDrop(th, kn) { return 0.03 + 0.43 * Math.cos(th) + 0.41 * Math.cos(th + kn) + 0.083; }
+function animateAvatar(dt, m) {
+  AV.t += dt;
+  const hs = Math.hypot(m.mx, m.mz) / Math.max(dt, 1e-4);
+  const loco = m.input > 0.05 ? Math.min(hs, RUN * 1.05) : 0;
+  AV.speed += (loco - AV.speed) * Math.min(1, dt * 8);
+  const v = AV.speed;
+  // turn towards where you go; during an action, towards where the camera looks
+  const target = AV.act ? player.yaw : (m.input > 0.1 ? Math.atan2(-m.ix, -m.iz) : AV.yaw);
+  AV.yaw += clampN(wrapA(target - AV.yaw), -11 * dt, 11 * dt);
+  avatar.rotation.y = AV.yaw;
+  const pushing = m.input > 0.4 && hs < 0.3 * WALK * m.input;
+  AV.push = clampN(AV.push + (pushing ? dt * 5 : -dt * 6), 0, 1);
+  AV.rail += ((m.onLink ? 1 : 0) - AV.rail) * Math.min(1, dt * 6);
+  // gait
+  AV.phase += v * dt / (1.25 + 0.26 * v) * Math.PI * 2;
+  const walkW = clampN(v / WALK, 0, 1), runW = clampN((v - WALK) / (RUN - WALK), 0, 1), idleW = 1 - walkW;
+  const s = Math.sin(AV.phase), c = Math.cos(AV.phase);
+  const climb = clampN(Math.abs(m.my) / Math.max(dt, 1e-4) / 1.5, 0, 1) * walkW;
+  const A = (0.5 + 0.38 * runW + 0.18 * climb) * walkW, K = (0.7 + 0.55 * runW + 0.45 * climb) * walkW, B = (0.42 + 0.45 * runW) * walkW;
+  const breath = Math.sin(AV.t * 1.8);
+  const P = {
+    thL: A * s, thR: -A * s, knL: -(0.05 + K * Math.max(0, c)), knR: -(0.05 + K * Math.max(0, -c)),
+    shLx: -B * s, shRx: B * s, shLz: -0.11 - 0.015 * breath * idleW, shRz: 0.11 + 0.015 * breath * idleW,
+    elL: 0.14 + (0.2 + 1.05 * runW) * walkW + 0.25 * walkW * Math.max(0, -s), elR: 0.14 + (0.2 + 1.05 * runW) * walkW + 0.25 * walkW * Math.max(0, s),
+    elLz: 0, elRz: 0, spX: -(0.03 * walkW + 0.17 * runW) + 0.012 * breath * idleW, spY: (0.1 + 0.05 * runW) * walkW * s, spZ: 0, pvY: -0.06 * walkW * s,
+  };
+  // head: looks where the camera looks, and now and then around when standing
+  if (idleW > 0.8 && !AV.act) { if ((AV.lookNext -= dt) < 0) { AV.look = rand(AV.t) < 0.4 ? 0 : (rand(AV.t * 3.1) - 0.5) * 1.3; AV.lookNext = 2.5 + rand(AV.t * 7.7) * 4; } }
+  else AV.look = 0;
+  const camRel = clampN(wrapA(player.yaw - AV.yaw), -1.1, 1.1);
+  P.hdY = camRel * (0.35 + 0.45 * idleW) + AV.look * (Math.abs(camRel) < 0.4 ? 1 : 0);
+  P.hdX = clampN(player.pitch * 0.6, -0.35, 0.45);
+  // a hand on the rail on stairs and escalators
+  const r = AV.rail;
+  P.shRz += (0.42 - P.shRz) * r; P.shRx += (0.2 - P.shRx) * r; P.elR += (0.55 - P.elR) * r;
+  // both hands on the glass or wall you walk into
+  const p = AV.push;
+  if (p > 0) {
+    const pose = { shLx: 1.3, shRx: 1.3, shLz: 0.16, shRz: -0.16, elL: 0.75, elR: 0.75, spX: -0.1, thL: 0.22, knL: -0.2, thR: -0.12, knR: -0.06, hdX: 0.05 };
+    for (const k in pose) P[k] += (pose[k] - P[k]) * p;
+  }
+  // one-shot actions
+  if (AV.act) {
+    const T = AV.actT += dt, D = ACTS[AV.act];
+    if (T >= D) AV.act = null;
+    else {
+      const w = Math.min(1, T / 0.22, (D - T) / 0.3), e = w * w * (3 - 2 * w);
+      let pose;
+      if (AV.act === 'wave') pose = { shRz: 2.6, shRx: 0.2, elR: 0.25, elRz: 0.55 + 0.5 * Math.sin(T * 11), spZ: -0.05, hdY: 0 };
+      else if (AV.act === 'knock') pose = { shRx: 1.42, shRz: -0.12, elR: 0.45 + (T > 0.25 && T < 0.95 ? 0.6 * Math.max(0, Math.sin((T - 0.25) * 17)) : 0), spX: -0.07, hdY: 0, hdX: 0 };
+      else if (AV.act === 'point') pose = { shRx: 1.5, shRz: -0.04, elR: 0.05, spY: 0.12, hdY: 0, hdX: 0.05 };
+      else pose = { thL: 1.15, thR: 1.15, knL: -1.8, knR: -1.8, spX: -0.55, shLx: 0.95, shRx: 0.95, elL: 0.3, elR: 0.3, hdX: -0.3 };   // pick up
+      for (const k in pose) P[k] += (pose[k] - P[k]) * e;
+    }
+  }
+  // apply; the hips sit where the lower foot touches the ground
+  AVJ.pelvis.position.y = Math.max(legDrop(P.thL, P.knL), legDrop(P.thR, P.knR)) + 0.03 * runW * Math.abs(c);
+  AVJ.pelvis.rotation.y = P.pvY;
+  AVJ.hipL.rotation.x = P.thL; AVJ.kneeL.rotation.x = P.knL; AVJ.ankleL.rotation.x = -(P.thL + P.knL) * 0.85 - 0.25 * walkW * Math.max(0, -s);
+  AVJ.hipR.rotation.x = P.thR; AVJ.kneeR.rotation.x = P.knR; AVJ.ankleR.rotation.x = -(P.thR + P.knR) * 0.85 - 0.25 * walkW * Math.max(0, s);
+  AVJ.spine.rotation.set(P.spX, P.spY - P.pvY, P.spZ);
+  AV.headY += (P.hdY - P.spY - AV.headY) * Math.min(1, dt * 8); AV.headX += (P.hdX - P.spX * 0.6 - AV.headX) * Math.min(1, dt * 8);
+  AVJ.head.rotation.set(AV.headX, AV.headY, 0);
+  AVJ.shL.rotation.set(P.shLx, 0, P.shLz); AVJ.elL.rotation.set(P.elL, 0, P.elLz);
+  AVJ.shR.rotation.set(P.shRx, 0, P.shRz); AVJ.elR.rotation.set(P.elR, 0, P.elRz);
+}
 
 function pickMainDoor() {
   const [mx, mz] = M.exterior.metro;
@@ -1811,49 +1978,73 @@ window.addEventListener('keydown', e => {
   if (k === 'KeyF') { e.preventDefault(); toggleSearch(); }
   if (k === 'KeyO') setMode(mode === 'orbit' ? 'walk' : 'orbit');
   if (k === 'KeyH') goMine();
+  if (k === 'KeyE') doAction();
 });
 window.addEventListener('keyup', e => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());
 
-let look = null, joyId = null, joy = { x: 0, y: 0 }, runHeld = false, downAt = null;
+let look = null, joyId = null, joy = { x: 0, y: 0 }, joyBase = null, runHeld = false, downAt = null;
+// the left two thirds of the screen move you: the joystick appears where the finger lands and follows it past its rim;
+// the right third turns the camera
+const joyEl = $('joy'), knob = $('knob');
+function joyStart(ev) {
+  joyEl.style.transform = ''; const r = joyEl.getBoundingClientRect(), R = r.width / 2;
+  const cx = clampN(ev.clientX, R + 6, game.clientWidth - R - 6), cy = clampN(ev.clientY, R + 6, game.clientHeight - R - 6);
+  joyBase = { rx: r.left + R, ry: r.top + R, cx, cy, R };
+  joyEl.classList.add('active'); joyMove(ev);
+}
+function joyMove(ev) {
+  const b = joyBase; if (!b) return;
+  let dx = ev.clientX - b.cx, dy = ev.clientY - b.cy;
+  const len = Math.hypot(dx, dy);
+  if (len > b.R) { const k = (len - b.R) / len; b.cx += dx * k; b.cy += dy * k; dx -= dx * k; dy -= dy * k; }
+  joyEl.style.transform = `translate(${b.cx - b.rx}px, ${b.cy - b.ry}px)`;
+  knob.style.transform = `translate(${dx}px, ${dy}px)`;
+  const m = Math.hypot(dx, dy) / b.R, k = m < 0.12 ? 0 : (m - 0.12) / 0.88 / m;   // a small dead zone in the middle
+  joy = { x: dx / b.R * k, y: dy / b.R * k }; hideHint();
+}
+function joyEnd() { joyId = null; joyBase = null; joy = { x: 0, y: 0 }; joyEl.classList.remove('active'); joyEl.style.transform = ''; knob.style.transform = ''; }
 canvas.addEventListener('pointerdown', ev => {
   downAt = [ev.clientX, ev.clientY];
   if (mode !== 'walk') return;
-  if (look) return;
-  look = { id: ev.pointerId, x: ev.clientX, y: ev.clientY };
-  canvas.setPointerCapture(ev.pointerId);
+  if (ev.clientX < game.clientWidth * 2 / 3) {
+    if (joyId !== null) return;
+    joyId = ev.pointerId; canvas.setPointerCapture(ev.pointerId); joyStart(ev); ev.preventDefault();
+  } else if (!look) {
+    look = { id: ev.pointerId, x: ev.clientX, y: ev.clientY };
+    canvas.setPointerCapture(ev.pointerId);
+  }
 });
 canvas.addEventListener('pointermove', ev => {
   if (mode !== 'walk') { if (ev.pointerType === 'mouse') hoverOrbit(ev); return; }
+  if (ev.pointerId === joyId) { joyMove(ev); return; }
   if (look && look.id === ev.pointerId) {
-    const k = ev.pointerType === 'mouse' ? 0.0042 : 0.0062;
+    const k = ev.pointerType === 'mouse' ? 0.0055 : 0.0078;
     player.yaw -= (ev.clientX - look.x) * k;
     player.pitch = Math.max(-1.2, Math.min(1.1, player.pitch - (ev.clientY - look.y) * k));
     look.x = ev.clientX; look.y = ev.clientY; hideHint();
   }
 });
-const endLook = ev => { if (look && look.id === ev.pointerId) look = null; };
+const endPointer = ev => { if (ev.pointerId === joyId) joyEnd(); if (look && look.id === ev.pointerId) look = null; };
 canvas.addEventListener('pointerup', ev => {
-  endLook(ev);
+  endPointer(ev);
   if (mode === 'orbit' && downAt && Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) < 6) clickOrbit(ev);
 });
-canvas.addEventListener('pointercancel', endLook);
-const joyEl = $('joy'), knob = $('knob');
-function joyMove(ev) {
-  const r = joyEl.getBoundingClientRect();
-  let dx = ev.clientX - (r.left + r.width / 2), dy = ev.clientY - (r.top + r.height / 2);
-  const len = Math.hypot(dx, dy), max = r.width / 2;
-  if (len > max) { dx *= max / len; dy *= max / len; }
-  joy = { x: dx / max, y: dy / max }; knob.style.transform = `translate(${dx}px, ${dy}px)`; hideHint();
-}
-joyEl.addEventListener('pointerdown', ev => { joyId = ev.pointerId; joyEl.setPointerCapture(ev.pointerId); joyMove(ev); ev.preventDefault(); });
-joyEl.addEventListener('pointermove', ev => { if (ev.pointerId === joyId) joyMove(ev); });
-const joyEnd = ev => { if (ev.pointerId === joyId) { joyId = null; joy = { x: 0, y: 0 }; knob.style.transform = ''; } };
-joyEl.addEventListener('pointerup', joyEnd); joyEl.addEventListener('pointercancel', joyEnd);
+canvas.addEventListener('pointercancel', endPointer);
+window.addEventListener('blur', joyEnd);
 const runBtn = $('run');
 runBtn.addEventListener('pointerdown', ev => { runHeld = true; runBtn.setAttribute('aria-pressed', 'true'); runBtn.setPointerCapture(ev.pointerId); ev.preventDefault(); });
 const runEnd = () => { runHeld = false; runBtn.setAttribute('aria-pressed', 'false'); };
 runBtn.addEventListener('pointerup', runEnd); runBtn.addEventListener('pointercancel', runEnd);
+$('act').addEventListener('pointerdown', ev => { ev.preventDefault(); doAction(); });
+// the action: knock on the pavilion in front of you, point at one further off, wave otherwise
+function doAction() {
+  if (mode !== 'walk') return;
+  hideHint();
+  if (lookedAt && lookedDist < 2.8) { avatarAct('knock'); showRoom(lookedAt); }
+  else if (lookedAt) { avatarAct('point'); showRoom(lookedAt); }
+  else avatarAct('wave');
+}
 
 function toggleView() { view = view === 'fp' ? 'tp' : 'fp'; $('bView').setAttribute('aria-pressed', String(view === 'fp')); applyView(); }
 function applyView() { avatar.visible = mode === 'walk' && view === 'tp'; $('cross').hidden = !(mode === 'walk' && view === 'fp'); }
@@ -1871,7 +2062,7 @@ $('bFull').onclick = async () => {
 };
 const hint = $('hint');
 let hintTimer = null;
-function hideHint() { if (!hint.hidden) hint.hidden = true; }
+function hideHint() { if (!hint.hidden) hint.hidden = true; if (!$('zones').hidden) $('zones').hidden = true; }
 
 // ============================================================== search
 const searchEl = $('search'), q = $('q'), results = $('results');
@@ -1926,7 +2117,7 @@ function goToRoom(r) {
     let k = 4.0;
     while (k > 1.2 && blocked((x1 + x2) / 2 + nx * k, (z1 + z2) / 2 + nz * k, r.level === 2 ? H2 : 0)) k -= 0.4;
     player.x = (x1 + x2) / 2 + nx * k; player.z = (z1 + z2) / 2 + nz * k; player.y = r.level === 2 ? H2 : 0; player.vy = 0;
-    player.yaw = Math.atan2(nx, nz); player.pitch = 0.12;
+    player.yaw = Math.atan2(nx, nz); player.pitch = 0.12; AV.yaw = player.yaw;
   }
 }
 
@@ -1944,6 +2135,7 @@ function setupMine() {
     edges.push(segBox(x0, z0, x1, z1, y0 + 0.012, 0.025, 0.18));
   }
   (mine.level === 2 ? groups.f2 : groups.f1).add(new THREE.Mesh(merge(edges), new THREE.MeshBasicMaterial({ color: 0xffc400 })));
+  setBadge(mine.codes[0]);
   beacon = spriteSign(['★ МОЙ ПАВИЛЬОН', mine.codes[0]], '#1d1f22', '#ffd400', 0.9, { round: true, fg2: '#ffffff' });
   beacon.material.depthTest = false; beacon.renderOrder = 20;
   beacon.position.set(mine.box.cx, y0 + mine.h + 1.6, mine.box.cz);
@@ -1955,6 +2147,7 @@ function goMine() {
   if (mode === 'orbit') setMode('walk');
   toggleSearch(false);
   goToRoom(mine);
+  avatarAct('wave'); AV.waveAt = AV.t;
 }
 
 // ============================================================== orbit (overview) mode
@@ -1980,6 +2173,7 @@ function setMode(m) {
   controls.enabled = m === 'orbit';
   $('orbitBar').hidden = m !== 'orbit';
   $('joyWrap').hidden = $('runWrap').hidden = m === 'orbit';
+  if (m === 'orbit') { joyEnd(); look = null; }
   camera.fov = m === 'orbit' ? 45 : 68; camera.near = m === 'orbit' ? 1 : 0.05; camera.updateProjectionMatrix();
   if (m === 'orbit') { setCut(cut); focusOrbit(bboxOf(M.footprint), 60); }
   applyVisibility(); applyView(); updateLabels(true);
@@ -2008,8 +2202,9 @@ $('cut1').onclick = () => setCut('1'); $('cut2').onclick = () => setCut('2'); $(
 $('play').onclick = () => { setMode('walk'); if (selected) goToRoom(selected); };
 
 // ============================================================== walking
-let lastLook = 0, lookedAt = null;
+let lastLook = 0, lookedAt = null, lookedDist = 99;
 function stepWalk(dt) {
+  const x0 = player.x, z0 = player.z, y0 = player.y;
   let fwd = 0, side = 0;
   if (keys.has('KeyW') || keys.has('ArrowUp')) fwd += 1;
   if (keys.has('KeyS') || keys.has('ArrowDown')) fwd -= 1;
@@ -2044,7 +2239,9 @@ function stepWalk(dt) {
     camera.position.set(player.x, player.y + EYE, player.z);
     camera.rotation.set(player.pitch, player.yaw, 0);
   } else {
-    avatar.position.set(player.x, player.y, player.z); avatar.rotation.y = player.yaw;
+    avatar.position.set(player.x, player.y, player.z);
+    const onLink = player.y > 0.05 && player.y < H2 - 0.05 && links.some(L => inLink(L, player.x, player.z));
+    animateAvatar(dt, { mx: player.x - x0, mz: player.z - z0, my: player.y - y0, ix: -sy * fwd + cy * side, iz: -cy * fwd - sy * side, input: Math.min(1, Math.hypot(fwd, side)), onLink });
     const hx = player.x, hz = player.z, hy = player.y + 1.55;
     const want = 3.6, up = 0.85 - Math.sin(player.pitch) * 2.2;
     let dist = want;
@@ -2064,9 +2261,11 @@ function stepWalk(dt) {
       const list = grid.get(Math.floor(x / CELL) * 100000 + Math.floor(z / CELL)); if (!list) continue;
       for (const c of list) {
         if (!c.room || c.lvl !== lvl) { if (c.lvl === lvl && !c.room && !c.link && !c.rail && pip(x, z, c.pts)) { d = 99; break; } continue; }
-        if (x >= c.x0 && x <= c.x1 && z >= c.z0 && z <= c.z1 && pip(x, z, c.pts)) { found = c.room; break; }
+        if (x >= c.x0 && x <= c.x1 && z >= c.z0 && z <= c.z1 && pip(x, z, c.pts)) { found = c.room; lookedDist = d; break; }
       }
     }
+    // the hero waves when he comes up to his own pavilion
+    if (mine && mine.level === lvl && AV.t - AV.waveAt > 30 && Math.hypot(player.x - mine.box.cx, player.z - mine.box.cz) < 6) { avatarAct('wave'); AV.waveAt = AV.t; }
     if (found !== lookedAt) { lookedAt = found; if (!selected || found) showRoom(found || selected); }
     const w = whereAmI();
     if (w.text !== lastWhere) { lastWhere = w.text; whereText.textContent = w.text; whereDot.style.background = w.color; recon.hidden = w.lvl !== 2; }
@@ -2116,10 +2315,11 @@ async function start() {
     build(); indexColliders(); setupMine(); buildMinimap();
     bar.style.width = '90%';
     SPAWN = computeSpawn();
-    Object.assign(player, SPAWN, { y: 0 });
+    Object.assign(player, SPAWN, { y: 0 }); AV.yaw = player.yaw;
     resize(); setMode('walk'); applyView();
     $('loading').hidden = true;
-    hint.hidden = false; hintTimer = setTimeout(hideHint, 9000);
+    hint.hidden = false; $('zones').hidden = !coarse; hintTimer = setTimeout(hideHint, 9000);
+    if (!coarse) hint.textContent = 'WASD — идти · Shift — бег · тяни мышью справа — камера · E — действие · ★ — к моему павильону';
     requestAnimationFrame(t => { last = t; tick(t); });
   } catch (e) {
     txt.textContent = 'Не удалось загрузить модель: ' + e.message;
