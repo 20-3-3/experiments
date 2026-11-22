@@ -22,14 +22,19 @@ jobs:
       - name: Собрать сайт
         run: |
           mkdir -p _site
-          page() {   # the game pages are written without the document skeleton; add it for the open web
-            printf '<!doctype html>\n<html lang="ru">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n<meta name="theme-color" content="#0e1014">\n<meta name="apple-mobile-web-app-capable" content="yes">\n<meta name="mobile-web-app-capable" content="yes">\n'
+          # the game pages are written without the document skeleton; add it for the open web, with each game's own
+          # home-screen icon and name (without them a phone borrows the icon of another site on 20-3-3.github.io)
+          page() {
+            printf '<!doctype html>\n<html lang="ru">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n'
+            printf '<meta name="theme-color" content="#0e1014">\n<meta name="apple-mobile-web-app-capable" content="yes">\n<meta name="mobile-web-app-capable" content="yes">\n'
+            printf '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">\n<meta name="apple-mobile-web-app-title" content="%s">\n' "$2"
+            printf '<link rel="apple-touch-icon" href="%s">\n<link rel="icon" type="image/png" href="%s">\n<link rel="manifest" href="%s">\n' "$3" "$3" "$4"
             cat "$1"
             printf '\n</html>\n'
           }
-          page novaya-gorbushka-3d.html > _site/index.html
-          cp novaya-gorbushka-model.json _site/
-          page staraya-gorbushka-3d.html > _site/staraya.html
+          page novaya-gorbushka-3d.html 'Горбушка' icon-180.png manifest.webmanifest > _site/index.html
+          page staraya-gorbushka-3d.html 'Ст. Горбушка' staraya-180.png staraya.webmanifest > _site/staraya.html
+          cp novaya-gorbushka-model.json site/* _site/
           touch _site/.nojekyll
       - uses: actions/configure-pages@v5
         with:

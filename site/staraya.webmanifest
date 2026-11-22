@@ -1,0 +1,14 @@
+{
+  "name": "Старая Горбушка 3D",
+  "short_name": "Ст. Горбушка",
+  "start_url": "./staraya.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0e1014",
+  "theme_color": "#2b3a67",
+  "icons": [
+    { "src": "staraya-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "staraya-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
