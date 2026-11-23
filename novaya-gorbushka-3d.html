@@ -770,9 +770,19 @@ function kitRoom(r, K) {
   const fset = new Set((r.fronts || []).map(f => f[0] + ',' + f[1] + ',' + f[2] + ',' + f[3]));
   const isFront = (a, b) => fset.has(a[0] + ',' + a[1] + ',' + b[0] + ',' + b[1]) || fset.has(b[0] + ',' + b[1] + ',' + a[0] + ',' + a[1]);
   let walls = 0;
+  const mf = r.mine ? frontOf(r) : null;
+  const isMain = (a, b) => mf && ((a[0] === mf[0] && a[1] === mf[1] && b[0] === mf[2] && b[1] === mf[3]) || (b[0] === mf[0] && b[1] === mf[1] && a[0] === mf[2] && a[1] === mf[3]));
   for (const e of ringEdges(r.poly)) {
     if (e.L < 0.05) continue;
     const { a, b, nx, nz } = e, ry = -Math.atan2(e.ez, e.ex);
+    if (isMain(a, b)) {                                    // the owner's pavilion is open to the corridor: a long counter across it
+      for (const t of [0, 1]) K.posts.push([a[0] + e.ex * t, (y0 + top) / 2, a[1] + e.ez * t, 0.06, top - y0, 0.06, ry]);
+      const t0 = 0.5, t1 = e.L - 1.1, ux = e.ex / e.L, uz = e.ez / e.L, cx = a[0] + ux * (t0 + t1) / 2 - nx * 0.45, cz = a[1] + uz * (t0 + t1) / 2 - nz * 0.45, hl = (t1 - t0) / 2;
+      K.counters.push([cx, y0 + 0.5, cz, t1 - t0, 1.0, 0.55, ry]);
+      K.ctop.h([cx - ux * hl + nx * 0.28, cz - uz * hl + nz * 0.28], [cx + ux * hl + nx * 0.28, cz + uz * hl + nz * 0.28],
+        [cx - ux * hl - nx * 0.28, cz - uz * hl - nz * 0.28], [cx + ux * hl - nx * 0.28, cz + uz * hl - nz * 0.28], y0 + 1.004, true);
+      continue;
+    }
     if (isFront(a, b)) {
       const ox = nx * 0.02, oz = nz * 0.02;
       if (r.closed) {                                      // rolling shutter and its box
@@ -797,7 +807,7 @@ function kitRoom(r, K) {
   }
   if (r.closed) return;
   const f = frontOf(r);
-  if (f && r.kind !== 'kiosk' && r.area >= 7) {            // glass-topped counter behind the main front
+  if (f && !r.mine && r.kind !== 'kiosk' && r.area >= 7) {   // glass-topped counter behind the main front
     const [x1, z1, x2, z2, nx, nz] = f, L = Math.hypot(x2 - x1, z2 - z1);
     if (L > 2.2) {
       const cl = Math.min(2.6, L - 1.2), cx = (x1 + x2) / 2 - nx * 1.15, cz = (z1 + z2) / 2 - nz * 1.15;
@@ -1960,6 +1970,7 @@ function drawMinimap() {
     mctx.closePath(); mctx.lineWidth = 3; mctx.strokeStyle = '#1d1f22'; mctx.stroke();
     if (lvl === mine.level) { mctx.fillStyle = '#ffd400'; mctx.fill(); } else { mctx.strokeStyle = '#ffd400'; mctx.lineWidth = 2.5; mctx.stroke(); }
   }
+  if (window.GAME && GAME.mini) GAME.mini(mctx, mm.tx, mm.tz, lvl);
   const px = mm.tx(player.x), pz = mm.tz(player.z);
   mctx.save(); mctx.translate(px, pz); mctx.rotate(-player.yaw);
   mctx.fillStyle = '#d71920'; mctx.strokeStyle = '#fff'; mctx.lineWidth = 3;
@@ -2041,6 +2052,7 @@ $('act').addEventListener('pointerdown', ev => { ev.preventDefault(); doAction()
 function doAction() {
   if (mode !== 'walk') return;
   hideHint();
+  if (window.GAME && GAME.onAction && GAME.onAction()) return;   // talk to someone or open the pavilion
   if (lookedAt && lookedDist < 2.8) { avatarAct('knock'); showRoom(lookedAt); }
   else if (lookedAt) { avatarAct('point'); showRoom(lookedAt); }
   else avatarAct('wave');
@@ -2213,6 +2225,7 @@ function stepWalk(dt) {
   if (keys.has('ArrowLeft')) player.yaw += 2.2 * dt;
   if (keys.has('ArrowRight')) player.yaw -= 2.2 * dt;
   fwd -= joy.y; side += joy.x;
+  if (window.GAME && GAME.lock) { fwd = 0; side = 0; }   // the hero stands behind the counter
   const mag = Math.hypot(fwd, side); if (mag > 1) { fwd /= mag; side /= mag; }
   const speed = (keys.has('ShiftLeft') || keys.has('ShiftRight') || runHeld) ? RUN : WALK;
   const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
@@ -2235,13 +2248,17 @@ function stepWalk(dt) {
   const lvl = player.y > H2 - 0.9 ? 2 : 1;
   const inside = inMain(player.x, player.z), inA = inAwing(player.x, player.z);
   const camMaxY = inA ? CEIL_A - 0.25 : (inside ? (lvl === 1 ? CEIL1 - 0.25 : 9.1) : 1000);
-  if (view === 'fp') {
+  const gameCam = window.GAME && GAME.camHook;          // trading and talking scenes frame the shot themselves
+  if (view === 'fp' && !gameCam) {
     camera.position.set(player.x, player.y + EYE, player.z);
     camera.rotation.set(player.pitch, player.yaw, 0);
   } else {
     avatar.position.set(player.x, player.y, player.z);
     const onLink = player.y > 0.05 && player.y < H2 - 0.05 && links.some(L => inLink(L, player.x, player.z));
     animateAvatar(dt, { mx: player.x - x0, mz: player.z - z0, my: player.y - y0, ix: -sy * fwd + cy * side, iz: -cy * fwd - sy * side, input: Math.min(1, Math.hypot(fwd, side)), onLink });
+  }
+  if (gameCam) GAME.camHook(camera);
+  else if (view !== 'fp') {
     const hx = player.x, hz = player.z, hy = player.y + 1.55;
     const want = 3.6, up = 0.85 - Math.sin(player.pitch) * 2.2;
     let dist = want;
@@ -2287,6 +2304,7 @@ let last = performance.now();
 function tick(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (mode === 'orbit') controls.update(); else stepWalk(dt);
+  if (window.GAME && GAME.tick) GAME.tick(dt);
   sky.position.copy(camera.position);
   if (mode === 'walk') aimSun(player.x, player.z, 55);
   else aimSun(controls.target.x, controls.target.z, Math.min(260, Math.max(70, camera.position.distanceTo(controls.target) * 0.8)));
@@ -2319,6 +2337,7 @@ async function start() {
     resize(); setMode('walk'); applyView();
     $('loading').hidden = true;
     hint.hidden = false; $('zones').hidden = !coarse; hintTimer = setTimeout(hideHint, 9000);
+    if (window.GAME && GAME.init) GAME.init();
     if (!coarse) hint.textContent = 'WASD — идти · Shift — бег · тяни мышью в правой половине — камера · E — действие · ★ — к моему павильону';
     requestAnimationFrame(t => { last = t; tick(t); });
   } catch (e) {
@@ -2328,3 +2347,4 @@ async function start() {
 }
 start();
 </script>
+<script src="novaya-gorbushka-game.js"></script>
